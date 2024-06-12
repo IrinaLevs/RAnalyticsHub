@@ -15,7 +15,7 @@ library(psych)
 library(readr)
 library(dplyr)
 # Set working directory and load the data
-data <- read_csv("C:/Users/irina/OneDrive/Documents/R scripts/XLSExportFile.csv")
+data <- read_csv("C:/Users/irina/OneDrive/Documents/R scripts/SampleFile.csv")
 
 # Display the first few rows of the data to understand its structure
 head(data)
