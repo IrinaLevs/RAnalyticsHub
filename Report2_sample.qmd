@@ -1,0 +1,265 @@
+---
+title: "Report 1: Weekly"
+author: "Irina Levshits, Data Manager"
+affiliation: "None"
+date: "`r Sys.Date()`"
+format: 
+  html:
+    theme: cosmo
+toc: true
+editor: visual
+df-print: kable
+engine: knitr
+knitr:
+  opts_chunk: 
+    R.options:
+      width: 150
+      height: 150
+---
+
+[![](images/logo.png){fig-align="center"}](https://dca.nj.gov)
+
+```{r include=FALSE}
+# Load packages
+library(tidyverse)
+library(sf)
+library(plotly)
+library(janitor)
+library(stringr)
+library(zipcodeR)
+library(dplyr)
+library(lubridate)
+
+```
+
+```{r include=FALSE}
+
+# Define a function to get county from zip code
+get_county_from_zip <- function(zip) {
+  county <- NA  # Initialize county as NA
+  # Check if the ZIP code is valid (5 digits)
+  if (nchar(zip) == 5 && grepl("^\\d{5}$", zip)) {
+    # Reverse lookup the county
+    county <- reverse_zipcode(zip)$county
+  }
+  return(county)
+}
+
+clean_hmis_counties <- function(data) {
+  # Read in county bounds
+  counties <- st_read('https://maps.nj.gov/arcgis/rest/services/Framework/Government_Boundaries/MapServer/1/query?outFields=*&where=1%3D1&f=geojson') %>%
+    clean_names()
+  
+  # Extract county names from the county bounds data
+  county_names <- unique(str_to_title(counties$county))
+  
+  # Clean column names, create combined column, filter for unique persons, remove all non-alphanumeric characters
+  data <- data %>%
+    clean_names() %>%
+    mutate(program_county = str_to_title(program_county), program = str_to_title(program), program_division = str_to_title(program_division)) %>%
+    distinct(personal_id, .keep_all = TRUE) %>%
+    mutate(combined = str_replace_all(paste(program, program_division), "[^[:alnum:]]", ""))
+  
+  # Process only rows where program_county is NA
+  if (any(is.na(data$program_county))) {
+    data_to_process <- data %>%
+      filter(is.na(program_county))
+    
+    # Extract county names from combined program/division field without regex boundaries
+    for (i in 1:nrow(data_to_process)) {
+      result <- str_extract(data_to_process$combined[i], paste(county_names, collapse = "|")) %>%
+        na.omit()
+      
+      if (length(result) == 1){
+        data_to_process$program_county[i] <- result
+      } else {
+        # If county not found in combined field, get it from zip code
+        zip <- data_to_process$zip_code_of_last_permanent_address[i]  # Using the appropriate column name for zip code
+        data_to_process$program_county[i] <- get_county_from_zip(zip)
+      }
+    }
+    
+    # Re-merge processed rows back into the original dataset
+    data_final <- bind_rows(data %>% filter(!is.na(program_county)), data_to_process)
+  } else {
+    data_final <- data  # No changes needed if no NA in program_county
+  }
+  
+  return(data_final)
+}
+
+# Read data
+data <- read_csv("C:/Users/irina/OneDrive/Documents/R scripts/XLSExportFile.csv") %>%
+  clean_names() %>%
+  distinct(personal_id, .keep_all = TRUE) %>%
+  mutate(program_county = str_to_title(program_county), program = str_to_title(program), program_division = str_to_title(program_division)) %>%
+  mutate(combined = str_replace_all(paste(program, program_division), "[^[:alnum:]]", "")) %>%
+  mutate(admission_date_project_start_date = ymd(admission_date_project_start_date),
+         week = week(admission_date_project_start_date),
+         year = year(admission_date_project_start_date))
+
+# Clean the data to get counties
+data <- clean_hmis_counties(data)
+
+# Get current week data and prior week data
+this_year <- year(Sys.Date())
+current_week_data <- data %>%
+  filter(year == this_year) %>%
+  filter(week == max(week))
+
+# Build dataframes for weekly report
+this_week_homeless <- current_week_data %>% filter(is.na(reason_for_discharge) == TRUE)
+
+# Read in county bounds
+counties <- st_read('https://maps.nj.gov/arcgis/rest/services/Framework/Government_Boundaries/MapServer/1/query?outFields=*&where=1%3D1&f=geojson') %>%
+  clean_names() %>%
+  mutate(county = str_to_title(county))
+
+# Count number of veterans
+veterans <- data %>% 
+  filter(veteran_status == "yes") %>% 
+  nrow()
+
+# Group by county
+count_by_county <- data %>%
+  group_by(program_county) %>%
+  summarise(county_total = n()) %>%
+  arrange(desc(county_total))
+
+# Join the count by county to the county bounds
+county_count_sf <- counties %>%
+  left_join(count_by_county, by = c("county" = "program_county")) %>%
+  mutate(homelessness_rate = county_total / pop2020 * 100)
+
+# Get the current date
+current_date <- Sys.Date()
+
+# Get the start date of the current week
+start_of_week <- floor_date(current_date, "week")
+
+# Get the end date of the current week
+end_of_week <- ceiling_date(current_date, "week") - 1
+
+start_label <- format(start_of_week, "%B %d, %Y")
+end_label <- format(end_of_week, "%B %d, %Y")
+
+report_label <- paste(start_label,"-", end_label)
+
+
+
+
+
+```
+
+# `r report_label`
+
+## Statewide Overview
+
+In New Jersey, there are currently **`r prettyNum(nrow(data),big.mark = ",")`** individuals experiencing homelessness according to data reported in HMIS. Of this total, **`r prettyNum(veterans,big.mark = ",")`** identified themselves as veterans.
+
+### This Week
+
+This week, **`r nrow(this_week_homeless)`** individuals were enrolled in homelessness programs, according to HMIS project type data.
+
+These included:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+this_week_homeless %>% 
+  group_by(hmis_project_type) %>% 
+  count() %>% 
+  arrange(desc(n))
+
+```
+
+### This Week's Housing Outcomes
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+total_found_housing <- current_week_data %>% filter(is.na(discharge_date) == FALSE) %>% 
+    group_by(destination_category) %>% count() %>%
+    filter(destination_category == "Temporary Housing Situations" | destination_category == "Permanent Housing Situations") %>%
+    arrange(desc(n)) %>%
+    na.omit() %>% ungroup() %>% select(n) %>% sum()
+```
+
+Statewide, a total of **`r total_found_housing`** individuals found temporary or permanent housing.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+current_week_data %>% filter(is.na(discharge_date) == FALSE) %>% 
+  group_by(destination_category) %>% count() %>% 
+  arrange(desc(n)) %>%
+  na.omit()
+```
+
+## Number of Homeless Individuals By County
+
+```{r echo=FALSE}
+ggplot(count_by_county) +
+     aes(x = reorder(program_county, county_total), y = county_total, fill = county_total) +
+     geom_col() +
+     scale_fill_viridis_c(option = "viridis", direction = 1) +
+     labs(
+         x = "County Total",
+         y = "County",
+         title = "Count of Homeless Individuals by County",
+         subtitle = "As measured by individuals reported in HMIS programs",
+         fill = "Total"
+     ) +
+     coord_flip() +
+     theme_minimal()
+```
+
+## Map of County Results
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, output.width = "250%", output.height = "250%"}
+plot <- ggplot(county_count_sf) +
+  geom_sf(aes(fill = county_total)) +
+  scale_fill_viridis_c() +
+     labs(
+         title = "Count of Homeless Individuals by County",
+         subtitle = "As of 4/8/2024",
+         fill = "Total")
+
+ggplotly(plot)
+
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, output.width = "250%", output.height = "250%"}
+plot <- ggplot(county_count_sf) +
+  geom_sf(aes(fill = homelessness_rate)) +
+  scale_fill_viridis_c() +
+     labs(
+         title = "Homelessness Rate by County",
+         fill = "Total")
+
+ggplotly(plot)
+
+```
+
+### County Statistics
+
+## Raw Count by County
+
+```{r echo=FALSE}
+count_by_county
+```
+
+## Percent of Population Homeless by County
+
+```{r echo=FALSE}
+county_count_sf %>% st_drop_geometry() %>% select(county,homelessness_rate) %>% arrange(desc(homelessness_rate)) %>% mutate(homelessness_rate = round(homelessness_rate,2))
+```
+
+## Housing Outcomes by County
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+current_week_data %>% filter(is.na(discharge_date) == FALSE) %>% 
+  group_by(program_county,destination_category) %>% count() %>% 
+  arrange(program_county,desc(n)) %>%
+  na.omit()
+```
+
+## Data, Methodology and Limitations
+
+Data was sourced from a database export on `r Sys.Date()`. The database export contained all data from 1/1/2020 to the prior business day so that only complete dates were used. Deduplication was handled using a unique personal ID number. We discarded these duplicates in order to count the number of unique individuals experiencing homelessness for this report.
+
+Extensive data cleaning was performed on the program and program division fields in order to derive the county, as most programs were missing this field in HMIS. Thus, the county numbers are based upon this process. Where two county names were present in the program and program division columns, the program field controlled as it had more granular information. Some counties were able to be inferred based on the provided ZIP code.
