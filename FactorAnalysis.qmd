@@ -1,0 +1,73 @@
+---
+title: "Factor Analysis Report"
+author: "Irina Levshits"
+date: "`r format(Sys.Date())`"
+format: html
+---
+
+Purpose of the Analysis
+
+The purpose of this analysis is to identify underlying factors that explain the patterns of correlations within a dataset containing information about individuals' ages at admission, their current ages, and the total number of months they have been homeless in the past three years. By performing factor analysis, we aim to uncover latent variables that may account for the observed data. This can help in understanding the relationships between different variables and identifying key factors that influence the homelessness experience.
+---
+
+```{r include=FALSE}
+library(psych)
+library(readr)
+library(dplyr)
+# Set working directory and load the data
+data <- read_csv("C:/Users/irina/OneDrive/Documents/R scripts/XLSExportFile.csv")
+
+# Display the first few rows of the data to understand its structure
+head(data)
+
+
+```
+
+```{r include=FALSE}
+# Inspect and convert the necessary columns to numeric, handling NAs
+data <- data %>%
+  mutate(
+    `Age at Admission` = as.numeric(`Age at Admission`),
+    `Current Age` = as.numeric(`Current Age`),
+    `Total number of months homeless on the street, in ES, or SH in the past three years (Admission)` = as.numeric(`Total number of months homeless on the street, in ES, or SH in the past three years (Admission)`)
+  )
+
+# Check for any NA values in the numeric columns and handle them
+data_numeric <- data[, c("Age at Admission", "Current Age", "Total number of months homeless on the street, in ES, or SH in the past three years (Admission)")]
+data_numeric <- na.omit(data_numeric)
+
+# Perform factor analysis
+fa <- fa(data_numeric, nfactors=2, rotate="varimax")
+print(fa$loadings)
+
+```
+
+**Interpretation**: Factor analysis was conducted to identify underlying factors that explain the patterns of correlations within the set of observed variables.
+
+### Factor Loadings:
+
+-   `Age at Admission`: 0.998 on MR1
+
+-   `Current Age`: 0.998 on MR1
+
+-   `Total number of months homeless on the street, in ES, or SH in the past three years (Admission)`: No significant loading on MR1 or MR2
+
+### Explanation:
+
+-   The factor loadings indicate that `Age at Admission` and `Current Age` are highly correlated and load strongly on the first factor (MR1). This suggests that these two variables are measuring a similar underlying construct, likely related to the age of the individuals.
+
+-   The variable `Total number of months homeless on the street, in ES, or SH in the past three years (Admission)` did not load significantly on either factor. This indicates that this variable may not be closely related to the same underlying construct as the age variables or that the presence of NAs affected its loadings.
+
+### Variance Explained:
+
+-   The first factor (MR1) explains 66.4% of the variance in the data.
+
+-   The second factor (MR2) explains only 0.2% of the variance.
+
+-   The cumulative variance explained by the two factors is 66.7%.
+
+### Interpretation:
+
+The results suggest that the first factor captures a substantial amount of the variability in the dataset, primarily driven by the age-related variables. The second factor does not contribute significantly to explaining the variance, indicating that there may not be a second underlying construct captured by these variables.
+
+Additionally, the lack of significant loading of the `Total number of months homeless on the street, in ES, or SH in the past three years (Admission)` on either factor suggests that this variable is not closely correlated with `Age at Admission` and `Current Age`.
