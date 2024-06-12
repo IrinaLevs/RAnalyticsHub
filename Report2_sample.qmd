@@ -89,7 +89,7 @@ clean_hmis_counties <- function(data) {
 }
 
 # Read data
-data <- read_csv("C:/Users/irina/OneDrive/Documents/R scripts/XLSExportFile.csv") %>%
+data <- read_csv("C:/Users/irina/OneDrive/Documents/R scripts/SampleFile.csv") %>%
   clean_names() %>%
   distinct(personal_id, .keep_all = TRUE) %>%
   mutate(program_county = str_to_title(program_county), program = str_to_title(program), program_division = str_to_title(program_division)) %>%
